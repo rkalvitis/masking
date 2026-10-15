@@ -28,6 +28,8 @@ case "${1:-}" in
     echo "== results in out/gtbench_rhea/ (_report/REPORT.md, <method>/score.csv)";;
   cmd)
     echo "# build once:"; echo "singularity build --fakeroot $CONT $SRV/gtbench/gtbench.def"
+    echo "# first-run check with the GPU (model imports cannot be tested inside 'singularity build'):"
+    echo "singularity exec --nv --cleanenv --contain --bind $SRV:/workspace $CONT bash -c 'cd /workspace && python -m gtbench.selfcheck'"
     echo "# SAM 3 (gated): accept the licence on huggingface.co/facebook/sam3, then once:"
     echo "singularity exec --bind $BENCH:/bench $CONT bash -c 'HF_HOME=/bench/weights/hf hf auth login'"
     echo "# run everything (inside screen):"; echo "export SINGULARITYENV_CUDA_VISIBLE_DEVICES=0"

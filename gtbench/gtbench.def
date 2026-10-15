@@ -20,6 +20,9 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 #                                  gt/{images,masks}  results/<method>/  weights/
 # Build (~15 min, needs network):
 #   singularity build --fakeroot /home/robertsk/containers/gtbench.sif /home/robertsk/masking/gtbench/gtbench.def
+# First-run check WITH the GPU (model imports cannot be tested at build time, there is no GPU in `build`):
+#   singularity exec --nv --cleanenv --contain --bind /home/robertsk/masking:/workspace \
+#       /home/robertsk/containers/gtbench.sif bash -c "cd /workspace && python -m gtbench.selfcheck"
 #
 # Run:
 #   export SINGULARITYENV_CUDA_VISIBLE_DEVICES=0
@@ -80,13 +83,21 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
     export SAM2_BUILD_ALLOW_ERRORS=1
     $PIP install --no-cache-dir "git+https://github.com/SysCV/sam-hq.git#subdirectory=sam-hq2"
 
-    # ---- sanity check at build time ----
+    # ---- sanity check at build time (NO GPU here) ----
+    # transformers 5 model modules call torch.accelerator.current_accelerator() at import time; with
+    # torch 2.6 that is a *runtime* device check, so importing Sam2Model etc. raises
+    # "Cannot access accelerator device when none is available" inside `singularity build`.
+    # Only the GPU-free imports are checked here; the model imports are checked by
+    # `python -m gtbench.selfcheck` on the first `singularity exec --nv` (see header).
     /opt/conda/envs/gtbench/bin/python - <<'PY'
-import torch, transformers, rembg, segment_anything_hq, onnxruntime as ort
+import torch, transformers, rembg, segment_anything_hq, onnxruntime as ort, cv2, skimage, pandas
 print("torch", torch.__version__, "cuda build", torch.version.cuda)
 print("transformers", transformers.__version__, "| onnxruntime providers", ort.get_available_providers())
-from transformers import Sam2Model, Sam3Model, SamModel  # import check only
-from sam2.build_sam import build_sam2; from sam2.sam2_image_predictor import SAM2ImagePredictor  # HQ-SAM 2
+import importlib.util
+for mod in ("transformers.models.sam", "transformers.models.sam2", "transformers.models.sam3",
+            "sam2.build_sam", "sam2.sam2_image_predictor"):
+    assert importlib.util.find_spec(mod) is not None, f"missing module {mod}"
+    print("found", mod)
 PY
 
 %runscript

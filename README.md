@@ -92,8 +92,10 @@ post-process are NOT part of this benchmark.
 - Server (rhea) layout: code `/home/robertsk/masking` (git pull or `sync_to_rhea.sh code`), container
   `/home/robertsk/containers/gtbench.sif`, bench dir `/media/white/nanodrones/roberts.kalvitis/mask_bench`
   with `gt/{images,masks,index.csv}` (= `DIS5K_insect/`, `sync_to_rhea.sh data`), `results/<method>/`
-  and `weights/`. `gtbench/gtbench.def` is the Singularity container (CUDA 12.4, python 3.11, torch 2.5,
+  and `weights/`. `gtbench/gtbench.def` is the Singularity container (CUDA 12.4, python 3.11, torch 2.6,
   transformers 5, rembg GPU, segment-anything-hq; the lab's 3dgs containers are too old);
+  `python -m gtbench.selfcheck` (run once with `singularity exec --nv`) verifies CUDA and the model imports,
+  which `singularity build` cannot test because it has no GPU.
   `bash gtbench/sync_to_rhea.sh cmd` prints the build and run commands, `... results` pulls
   `results/` back to `out/gtbench_rhea/`. `gtbench/server_setup.sh` is the conda alternative.
 
