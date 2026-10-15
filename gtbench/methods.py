@@ -10,7 +10,8 @@ sam_box                facebook/sam-vit-huge                             box
 sam_points             facebook/sam-vit-huge                             box + positive point at box centre
 sam2_box               facebook/sam2.1-hiera-large                       box
 sam2_points            facebook/sam2.1-hiera-large                       box + positive point at box centre
-samhq_box              HQ-SAM ViT-H (lkeab/hq-sam sam_hq_vit_h.pth, official package)   box
+samhq_box              HQ-SAM ViT-H (lkeab/hq-sam sam_hq_vit_h.pth, segment-anything-hq)      box
+samhq2_box             HQ-SAM 2 hiera-large (lkeab/hq-sam sam2.1_hq_hiera_large.pt, SysCV sam-hq2 package, 2024-11 beta)  box
 sam3_box               facebook/sam3 (gated)                             box
 sam3_text              facebook/sam3 (gated)                             text "insect"
 birefnet_crop          ZhengPeng7/BiRefNet (1024 input)                  none
@@ -129,12 +130,35 @@ def _samhq(model_type="vit_h"):
 
 
 def samhq_box(crop, box):
+    """HQ-SAM ViT-H. Authors' recommendation for a single object: multimask_output=False, hq_token_only=True
+    (HQ output alone; False would only correct the SAM output)."""
     import torch
     pred = _samhq(os.environ.get("GTBENCH_HQSAM", "vit_h"))
     pred.set_image(crop)
     with torch.no_grad():
-        masks, scores, _ = pred.predict(box=np.array(box, dtype=np.float32), multimask_output=True, hq_token_only=True)
-    return masks[int(np.argmax(scores))].astype(bool)
+        masks, scores, _ = pred.predict(box=np.array(box, dtype=np.float32), multimask_output=False, hq_token_only=True)
+    return masks[0].astype(bool)
+
+
+# ---------------------------------------------------------------- HQ-SAM 2 (SysCV sam-hq2 fork of SAM 2.1, hiera-large)
+def _samhq2():
+    if "samhq2" not in _cache:
+        from huggingface_hub import hf_hub_download
+        from sam2.build_sam import build_sam2                      # SysCV/sam-hq/sam-hq2 package (installs as `sam2`)
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+        ckpt = hf_hub_download("lkeab/hq-sam", "sam2.1_hq_hiera_large.pt")
+        _cache["samhq2"] = SAM2ImagePredictor(build_sam2("configs/sam2.1/sam2.1_hq_hiera_l.yaml", ckpt, device=device()))
+    return _cache["samhq2"]
+
+
+def samhq2_box(crop, box):
+    """HQ-SAM 2 (hiera-large) with the box prompt; same single-object settings as HQ-SAM (hq_token_only=True)."""
+    import torch
+    pred = _samhq2()
+    with torch.inference_mode():
+        pred.set_image(crop)
+        masks, scores, _ = pred.predict(box=np.array(box, dtype=np.float32), multimask_output=False, hq_token_only=True)
+    return masks[0].astype(bool)
 
 
 # ---------------------------------------------------------------- SAM 3 (gated weights)
@@ -240,14 +264,14 @@ def grabcut(crop, box, iters=8, max_side=1024):
 METHODS = {
     "sam_box": sam_box, "sam_points": sam_points,
     "sam2_box": sam2_box, "sam2_points": sam2_points,
-    "samhq_box": samhq_box,
+    "samhq_box": samhq_box, "samhq2_box": samhq2_box,
     "sam3_box": sam3_box, "sam3_text": sam3_text,
     "birefnet_crop": birefnet_crop, "birefnet_hr": birefnet_hr,
     "rembg_birefnet": rembg_birefnet, "rembg_isnet": rembg_isnet, "rembg_u2net": rembg_u2net,
     "grabcut": grabcut,
 }
 GROUPS = {
-    "sam": ["sam_box", "sam_points", "sam2_box", "sam2_points", "samhq_box"],
+    "sam": ["sam_box", "sam_points", "sam2_box", "sam2_points", "samhq_box", "samhq2_box"],
     "sam3": ["sam3_box", "sam3_text"],
     "salient": ["birefnet_crop", "birefnet_hr", "rembg_birefnet", "rembg_isnet", "rembg_u2net"],
     "classical": ["grabcut"],

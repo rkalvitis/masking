@@ -9,24 +9,31 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 # but a NEWER stack, because those containers (python 3.8, torch 2.0, CUDA 11.8) cannot run
 # SAM 2 / SAM 3 / transformers 5:
 #   Python        3.11
-#   PyTorch       2.5 (cu124 pip wheel; sm_89 = RTX 4080 included)
+#   PyTorch       2.6.0 (cu124 pip wheel; sm_89 = RTX 4080 included; transformers 5.19 needs torch >= 2.6 for torch.accelerator)
 #   transformers  >= 5 (Sam2Model, Sam3Model, BiRefNet remote code)
-#   rembg[gpu] + onnxruntime-gpu (CUDA 12 / cuDNN 9 build), segment-anything-hq
+#   rembg[gpu] + onnxruntime-gpu (CUDA 12 / cuDNN 9 build), segment-anything-hq (HQ-SAM v1),
+#   HQ-SAM 2 from github.com/SysCV/sam-hq/sam-hq2 (installs as package `sam2`; compiles a CUDA ext with nvcc)
 #
-# Build on rhea (~15 min, needs network):
-#   singularity build --fakeroot ~/containers/gtbench.sif /home/robertsk/masking/gtbench/gtbench.def
+# Server layout (rhea):  code      /home/robertsk/masking            (bound at /workspace)
+#                        container /home/robertsk/containers/gtbench.sif
+#                        bench     /media/white/nanodrones/roberts.kalvitis/mask_bench   (bound at /bench)
+#                                  gt/{images,masks}  results/<method>/  weights/
+# Build (~15 min, needs network):
+#   singularity build --fakeroot /home/robertsk/containers/gtbench.sif /home/robertsk/masking/gtbench/gtbench.def
 #
-# Run (code bound at /workspace, weights at /weights, results stay in the repo's out/):
+# Run:
 #   export SINGULARITYENV_CUDA_VISIBLE_DEVICES=0
 #   singularity exec --nv --cleanenv --contain \
-#       --bind /home/robertsk/masking:/workspace --bind <weights dir>:/weights \
-#       ~/containers/gtbench.sif bash -c "cd /workspace && \
-#       python -m gtbench.run --data DIS5K_insect --out out/gtbench --weights /weights --device cuda && \
-#       python -m gtbench.score --data DIS5K_insect --out out/gtbench"
+#       --bind /home/robertsk/masking:/workspace \
+#       --bind /media/white/nanodrones/roberts.kalvitis/mask_bench:/bench \
+#       /home/robertsk/containers/gtbench.sif bash -c "cd /workspace && \
+#       python -m gtbench.run --data /bench/gt --out /bench/results --weights /bench/weights --device cuda && \
+#       python -m gtbench.score --data /bench/gt --out /bench/results"
+#   (`bash gtbench/sync_to_rhea.sh cmd` on the Mac prints these.)
 #
-# SAM 3 weights are gated: accept the licence at https://huggingface.co/facebook/sam3, then either
-# log in once from inside the container with the weights dir bound (`hf auth login`, token lands in
-# /weights/hf) or pass SINGULARITYENV_HF_TOKEN=<token>. Everything downloads on first use into /weights.
+# SAM 3 weights are gated: accept the licence at https://huggingface.co/facebook/sam3, then log in once
+# from inside the container with the bench dir bound (`HF_HOME=/bench/weights/hf hf auth login`) or pass
+# SINGULARITYENV_HF_TOKEN=<token>. Everything downloads on first use into /bench/weights.
 # ---------------------------------------------------------------
 
 %environment
@@ -39,9 +46,9 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
     export PYTHONUNBUFFERED=1
     export OMP_NUM_THREADS=8
     # model caches default to the bound weights dir (gtbench.run --weights overrides)
-    export HF_HOME=${HF_HOME:-/weights/hf}
-    export U2NET_HOME=${U2NET_HOME:-/weights/rembg}
-    export TORCH_HOME=${TORCH_HOME:-/weights/torch}
+    export HF_HOME=${HF_HOME:-/bench/weights/hf}
+    export U2NET_HOME=${U2NET_HOME:-/bench/weights/rembg}
+    export TORCH_HOME=${TORCH_HOME:-/bench/weights/torch}
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -61,7 +68,7 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
     PIP=/opt/conda/envs/gtbench/bin/pip
 
     # ---- PyTorch cu124 ----
-    $PIP install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+    $PIP install --no-cache-dir torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 
     # ---- benchmark dependencies ----
     $PIP install --no-cache-dir \
@@ -69,12 +76,17 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
         opencv-python-headless scikit-image scipy pandas pillow \
         "rembg[gpu]" onnxruntime-gpu segment-anything-hq
 
+    # ---- HQ-SAM 2 (SysCV fork of SAM 2.1; the `sam2` package name is free because SAM 2.1 itself is used via transformers) ----
+    export SAM2_BUILD_ALLOW_ERRORS=1
+    $PIP install --no-cache-dir "git+https://github.com/SysCV/sam-hq.git#subdirectory=sam-hq2"
+
     # ---- sanity check at build time ----
     /opt/conda/envs/gtbench/bin/python - <<'PY'
 import torch, transformers, rembg, segment_anything_hq, onnxruntime as ort
 print("torch", torch.__version__, "cuda build", torch.version.cuda)
 print("transformers", transformers.__version__, "| onnxruntime providers", ort.get_available_providers())
 from transformers import Sam2Model, Sam3Model, SamModel  # import check only
+from sam2.build_sam import build_sam2; from sam2.sam2_image_predictor import SAM2ImagePredictor  # HQ-SAM 2
 PY
 
 %runscript

@@ -74,27 +74,31 @@ natural-background photos, so the white-box locator, the colour keying methods a
 post-process are NOT part of this benchmark.
 
 - `gtbench/methods.py`: the candidates, largest public variants, raw output, no cleanup:
-  SAM ViT-H (box, box+point), SAM 2.1 hiera-large (box, box+point), HQ-SAM ViT-H (official package,
-  `lkeab/hq-sam`), SAM 3 (box; text "insect"; gated weights -> `hf auth login`), BiRefNet (1024) and
+  SAM ViT-H (box, box+point), SAM 2.1 hiera-large (box, box+point), HQ-SAM ViT-H (`segment-anything-hq`,
+  `lkeab/hq-sam`), HQ-SAM 2 hiera-large (SysCV `sam-hq2` package, `sam2.1_hq_hiera_large.pt`, 2024-11 beta),
+  SAM 3 (box; text "insect"; gated weights -> `hf auth login`), BiRefNet (1024) and
   BiRefNet_HR (2048), rembg BiRefNet / IS-Net / U2-Net, GrabCut as the classical floor.
   Note IS-Net was trained on DIS5K, so its score is optimistic.
 - `gtbench/run.py`: crops a square around the padded GT box (the Popillia crop rule, 60 % padding,
   min 96 px) and runs every method on that crop with the GT box as the prompt; GT is used for nothing
   else. Writes `out/gtbench/masks/<method>/<stem>.png`, `crops/`, `crops.json`, `timing.json`, `run.log`.
-  `--weights DIR` stores all model caches under DIR (HF_HOME, U2NET_HOME, TORCH_HOME).
+  `--weights DIR` stores all model caches under DIR (HF_HOME, U2NET_HOME, TORCH_HOME). Output layout:
+  one folder per method (`<out>/<method>/{masks,run.log,timing.json,score.csv}`), the shared inputs in
+  `<out>/_inputs/`, the report in `<out>/_report/`.
 - `gtbench/score.py`: **methods are ranked by mean IoU over all images** (the GT mask vs the method
   mask, averaged over the 196 images); boundary F-score, precision/recall, thin-structure recall, MAE,
   per-category means, hardest images and contact sheets are reported alongside -> `out/gtbench/REPORT.md`.
   Each mask is scored raw and with the light production cleanup (`+light`).
-- Server (rhea): `gtbench/gtbench.def` is the Singularity container for this benchmark (CUDA 12.4,
-  python 3.11, torch 2.5, transformers 5, rembg GPU, segment-anything-hq; the lab's 3dgs containers are
-  too old). Build once with `singularity build --fakeroot ~/containers/gtbench.sif gtbench/gtbench.def`,
-  run with `--nv --bind <repo>:/workspace --bind <weights dir>:/weights` (full command in the .def header
-  and in `gtbench/sync_to_rhea.sh code`). `gtbench/server_setup.sh` is the conda alternative without a
-  container. Push the repo with git (`.gitignore` keeps `DIS5K_insect/` and drops `DIS5K_full/`, `data/`,
-  `out/`) or rsync it with `gtbench/sync_to_rhea.sh code`; `... results` pulls `out/gtbench` back.
+- Server (rhea) layout: code `/home/robertsk/masking` (git pull or `sync_to_rhea.sh code`), container
+  `/home/robertsk/containers/gtbench.sif`, bench dir `/media/white/nanodrones/roberts.kalvitis/mask_bench`
+  with `gt/{images,masks,index.csv}` (= `DIS5K_insect/`, `sync_to_rhea.sh data`), `results/<method>/`
+  and `weights/`. `gtbench/gtbench.def` is the Singularity container (CUDA 12.4, python 3.11, torch 2.5,
+  transformers 5, rembg GPU, segment-anything-hq; the lab's 3dgs containers are too old);
+  `bash gtbench/sync_to_rhea.sh cmd` prints the build and run commands, `... results` pulls
+  `results/` back to `out/gtbench_rhea/`. `gtbench/server_setup.sh` is the conda alternative.
 
 ```bash
-python -m gtbench.run --data DIS5K_insect --out out/gtbench --weights <weights dir> --device cuda
-python -m gtbench.score --data DIS5K_insect --out out/gtbench
+# on the server, inside the container (/workspace = code, /bench = mask_bench):
+python -m gtbench.run --data /bench/gt --out /bench/results --weights /bench/weights --device cuda
+python -m gtbench.score --data /bench/gt --out /bench/results      # -> /bench/results/_report/REPORT.md
 ```

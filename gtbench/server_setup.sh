@@ -13,10 +13,11 @@ conda create -y -n "$ENV" python=3.11
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate "$ENV"
 pip install --upgrade pip
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124   # transformers 5.19 needs torch >= 2.6
 pip install "transformers>=5.0" "huggingface_hub>=1.0" timm kornia einops accelerate \
             opencv-python-headless scikit-image scipy pandas pillow \
             "rembg[gpu]" onnxruntime-gpu segment-anything-hq
+SAM2_BUILD_ALLOW_ERRORS=1 pip install "git+https://github.com/SysCV/sam-hq.git#subdirectory=sam-hq2"   # HQ-SAM 2 (package `sam2`)
 python - <<'PY'
 import torch, transformers, rembg, segment_anything_hq
 print("torch", torch.__version__, "cuda", torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else "")

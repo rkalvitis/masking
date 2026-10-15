@@ -5,15 +5,16 @@
 
 Per image: square crop around the ground-truth box (pad 60 % of the box, min 96 px, same rule as
 the Popillia pipeline: the object fills the model input), every method on that crop with the box
-in crop coordinates, the crop mask pasted back into a full-size mask -> <out>/masks/<method>/<stem>.png.
-Also writes <out>/crops/<stem>.jpg + <out>/crops.json (the exact inputs), <out>/timing.json, <out>/run.log.
+in crop coordinates, the crop mask pasted back into a full-size mask. Layout (one subfolder per method):
+    <out>/<method>/masks/<stem>.png   <out>/<method>/timing.json   <out>/<method>/run.log
+    <out>/_inputs/crops/<stem>.jpg + <out>/_inputs/crops.json      (the exact crops/boxes every method saw)
 Ground truth is used ONLY for the box; nothing else from it reaches the methods.
 """
 import argparse, csv, glob, json, os, sys, time, traceback
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--data", default="DIS5K_insect", help="folder with images/, masks/ (same stems) and optional index.csv")
-ap.add_argument("--out", default="out/gtbench")
+ap.add_argument("--data", default="DIS5K_insect", help="folder with images/, masks/ (same stems) and optional index.csv; on the server: <mask_bench>/gt")
+ap.add_argument("--out", default="out/gtbench", help="results root, one subfolder per method; on the server: <mask_bench>/results")
 ap.add_argument("--weights", default=None, help="where model weights/caches are stored (HF_HOME, U2NET_HOME, TORCH_HOME set from this)")
 ap.add_argument("--methods", default="all")
 ap.add_argument("--device", default=None, help="cuda / mps / cpu (default: auto)")
@@ -52,13 +53,19 @@ if args.only:
     keep = set(args.only.split(",")); imgs = [p for p in imgs if os.path.splitext(os.path.basename(p))[0] in keep]
 if args.limit:
     imgs = imgs[:args.limit]
-os.makedirs(os.path.join(args.out, "crops"), exist_ok=True)
-log = open(os.path.join(args.out, "run.log"), "a")
-def say(s):
-    print(s, flush=True); log.write(s + "\n"); log.flush()
+INP = os.path.join(args.out, "_inputs"); os.makedirs(os.path.join(INP, "crops"), exist_ok=True)
+logs = {}
+def mdir(m): return os.path.join(args.out, m)
+def say(s, m=None):
+    print(s, flush=True)
+    for mm in ([m] if m else names):
+        if mm not in logs:
+            os.makedirs(mdir(mm), exist_ok=True); logs[mm] = open(os.path.join(mdir(mm), "run.log"), "a")
+        logs[mm].write(s + "\n"); logs[mm].flush()
 
-tpath = os.path.join(args.out, "timing.json"); timing = json.load(open(tpath)) if os.path.exists(tpath) else {}
-cpath = os.path.join(args.out, "crops.json"); crops = json.load(open(cpath)) if os.path.exists(cpath) else {}
+def tpath(m): return os.path.join(mdir(m), "timing.json")
+timing = {m: (json.load(open(tpath(m))) if os.path.exists(tpath(m)) else {}) for m in names}
+cpath = os.path.join(INP, "crops.json"); crops = json.load(open(cpath)) if os.path.exists(cpath) else {}
 say(f"== gtbench run {time.strftime('%F %T')}: {len(imgs)} images, methods {names}, device {M.device()}")
 
 
@@ -79,7 +86,7 @@ def crop_box(gt, shape, pad_frac, min_pad):
 
 for i, p in enumerate(imgs, 1):
     stem = os.path.splitext(os.path.basename(p))[0]
-    todo = [m for m in names if args.overwrite or not os.path.exists(os.path.join(args.out, "masks", m, stem + ".png"))]
+    todo = [m for m in names if args.overwrite or not os.path.exists(os.path.join(mdir(m), "masks", stem + ".png"))]
     if not todo:
         continue
     rgb = cv2.cvtColor(cv2.imread(p, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -87,7 +94,7 @@ for i, p in enumerate(imgs, 1):
     cbox, gbox = crop_box(gt, gt.shape, args.pad, args.min_pad)
     crop = np.ascontiguousarray(rgb[cbox[1]:cbox[3], cbox[0]:cbox[2]])
     box = [gbox[0] - cbox[0], gbox[1] - cbox[1], gbox[2] - cbox[0], gbox[3] - cbox[1]]
-    cp = os.path.join(args.out, "crops", stem + ".jpg")
+    cp = os.path.join(INP, "crops", stem + ".jpg")
     if not os.path.exists(cp):
         cv2.imwrite(cp, cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 92])
     crops[stem] = dict(image=os.path.relpath(p, args.data), full_size=[int(rgb.shape[1]), int(rgb.shape[0])], crop=list(cbox), gt_box=list(gbox), box_in_crop=box)
@@ -98,12 +105,13 @@ for i, p in enumerate(imgs, 1):
             cm = M.METHODS[m](crop, box)
             dt = time.time() - t0
             full = np.zeros(gt.shape, bool); full[cbox[1]:cbox[3], cbox[0]:cbox[2]] = cm
-            od = os.path.join(args.out, "masks", m); os.makedirs(od, exist_ok=True)
+            od = os.path.join(mdir(m), "masks"); os.makedirs(od, exist_ok=True)
             cv2.imwrite(os.path.join(od, stem + ".png"), full.astype(np.uint8) * 255)
-            timing.setdefault(m, {})[stem] = round(dt, 3)
-            say(f"    {m:15s} area {cm.mean()*100:5.1f}% of crop  {dt:6.1f}s")
+            timing[m][stem] = round(dt, 3)
+            say(f"    {m:15s} area {cm.mean()*100:5.1f}% of crop  {dt:6.1f}s", m)
+            json.dump(timing[m], open(tpath(m), "w"), indent=1)
         except Exception as e:
-            say(f"    {m:15s} FAILED: {type(e).__name__}: {e}")
-            log.write(traceback.format_exc())
-    json.dump(timing, open(tpath, "w"), indent=1); json.dump(crops, open(cpath, "w"), indent=1)
+            say(f"    {m:15s} FAILED: {type(e).__name__}: {e}", m)
+            logs[m].write(traceback.format_exc())
+    json.dump(crops, open(cpath, "w"), indent=1)
 say("== done")
