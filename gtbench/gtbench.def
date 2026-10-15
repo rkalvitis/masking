@@ -1,0 +1,81 @@
+Bootstrap: docker
+From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+# ---------------------------------------------------------------
+# gtbench — Singularity container for the ground-truth mask benchmark
+# (repos/masking/gtbench: SAM ViT-H, SAM 2.1, HQ-SAM, SAM 3, BiRefNet, rembg, GrabCut).
+#
+# Same layout as the lab's 3dgs.sif / masked-3dgs.sif (Miniconda in /opt/conda, one env),
+# but a NEWER stack, because those containers (python 3.8, torch 2.0, CUDA 11.8) cannot run
+# SAM 2 / SAM 3 / transformers 5:
+#   Python        3.11
+#   PyTorch       2.5 (cu124 pip wheel; sm_89 = RTX 4080 included)
+#   transformers  >= 5 (Sam2Model, Sam3Model, BiRefNet remote code)
+#   rembg[gpu] + onnxruntime-gpu (CUDA 12 / cuDNN 9 build), segment-anything-hq
+#
+# Build on rhea (~15 min, needs network):
+#   singularity build --fakeroot ~/containers/gtbench.sif /home/robertsk/masking/gtbench/gtbench.def
+#
+# Run (code bound at /workspace, weights at /weights, results stay in the repo's out/):
+#   export SINGULARITYENV_CUDA_VISIBLE_DEVICES=0
+#   singularity exec --nv --cleanenv --contain \
+#       --bind /home/robertsk/masking:/workspace --bind <weights dir>:/weights \
+#       ~/containers/gtbench.sif bash -c "cd /workspace && \
+#       python -m gtbench.run --data DIS5K_insect --out out/gtbench --weights /weights --device cuda && \
+#       python -m gtbench.score --data DIS5K_insect --out out/gtbench"
+#
+# SAM 3 weights are gated: accept the licence at https://huggingface.co/facebook/sam3, then either
+# log in once from inside the container with the weights dir bound (`hf auth login`, token lands in
+# /weights/hf) or pass SINGULARITYENV_HF_TOKEN=<token>. Everything downloads on first use into /weights.
+# ---------------------------------------------------------------
+
+%environment
+    export PATH=/opt/conda/envs/gtbench/bin:/opt/conda/bin:$PATH
+    export CONDA_DEFAULT_ENV=gtbench
+    export CUDA_HOME=/usr/local/cuda-12.4
+    export PATH=/usr/local/cuda-12.4/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
+    export PYTHONDONTWRITEBYTECODE=1
+    export PYTHONUNBUFFERED=1
+    export OMP_NUM_THREADS=8
+    # model caches default to the bound weights dir (gtbench.run --weights overrides)
+    export HF_HOME=${HF_HOME:-/weights/hf}
+    export U2NET_HOME=${U2NET_HOME:-/weights/rembg}
+    export TORCH_HOME=${TORCH_HOME:-/weights/torch}
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y --no-install-recommends \
+        git wget curl ca-certificates build-essential \
+        libgl1 libglib2.0-0 libgomp1 libxrender1 libxext6 libsm6
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # ---- Miniconda (same as masked-3dgs.def) ----
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p /opt/conda && rm /tmp/miniconda.sh
+    export PATH=/opt/conda/bin:$PATH
+    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+    /opt/conda/bin/conda create -n gtbench python=3.11 -y
+    PIP=/opt/conda/envs/gtbench/bin/pip
+
+    # ---- PyTorch cu124 ----
+    $PIP install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+
+    # ---- benchmark dependencies ----
+    $PIP install --no-cache-dir \
+        "transformers>=5.0" "huggingface_hub>=1.0" timm kornia einops accelerate \
+        opencv-python-headless scikit-image scipy pandas pillow \
+        "rembg[gpu]" onnxruntime-gpu segment-anything-hq
+
+    # ---- sanity check at build time ----
+    /opt/conda/envs/gtbench/bin/python - <<'PY'
+import torch, transformers, rembg, segment_anything_hq, onnxruntime as ort
+print("torch", torch.__version__, "cuda build", torch.version.cuda)
+print("transformers", transformers.__version__, "| onnxruntime providers", ort.get_available_providers())
+from transformers import Sam2Model, Sam3Model, SamModel  # import check only
+PY
+
+%runscript
+    exec /opt/conda/envs/gtbench/bin/python "$@"

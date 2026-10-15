@@ -1,0 +1,29 @@
+# large data: never in git
+DIS5K.zip
+DIS5K_full/
+# Popillia test images (.tif, 2 GB) and local mask sets
+data/
+# run outputs, masks, sheets, reports (rsync results back instead)
+out/
+# model caches if --weights points inside the repo
+weights/
+*.tif
+*.tiff
+*.pth
+*.onnx
+*.safetensors
+*.sif
+
+# DIS5K_insect/ (127 MB: 196 images + masks + index.csv) is deliberately NOT ignored, so a
+# `git pull` on the server brings the benchmark data. Add it here and rsync instead if too big.
+DIS5K_insect/
+# python / editor / os
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.env
+.DS_Store
+.vscode/
+.idea/
+*.log
