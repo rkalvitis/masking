@@ -141,13 +141,41 @@ def samhq_box(crop, box):
 
 
 # ---------------------------------------------------------------- HQ-SAM 2 (SysCV sam-hq2 fork of SAM 2.1, hiera-large)
+_HQSAM2_CFG = "configs/sam2.1/sam2.1_hq_hiera_l.yaml"
+_HQSAM2_CFG_URL = "https://raw.githubusercontent.com/SysCV/sam-hq/main/sam-hq2/sam2/" + _HQSAM2_CFG
+
+
+def _samhq2_config_dir():
+    """Return a directory that contains configs/sam2.1/sam2.1_hq_hiera_l.yaml.
+    `pip install git+...sam-hq2` has no MANIFEST.in, so the yaml files are usually NOT installed with the
+    package (facebookresearch/sam2 issues #444, #531, #721: "Cannot find primary config"). If the package
+    lacks it, download the yaml once into <weights>/hqsam2/ and point hydra at that directory instead."""
+    import sam2
+    pkg = os.path.dirname(sam2.__file__)
+    if os.path.exists(os.path.join(pkg, _HQSAM2_CFG)):
+        return None                                   # package search path works, nothing to do
+    root = os.path.join(os.path.dirname(os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))), "hqsam2")
+    dst = os.path.join(root, _HQSAM2_CFG)
+    if not os.path.exists(dst):
+        import urllib.request
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        urllib.request.urlretrieve(_HQSAM2_CFG_URL, dst)
+    return root
+
+
 def _samhq2():
     if "samhq2" not in _cache:
         from huggingface_hub import hf_hub_download
         from sam2.build_sam import build_sam2                      # SysCV/sam-hq/sam-hq2 package (installs as `sam2`)
         from sam2.sam2_image_predictor import SAM2ImagePredictor
+        cfg_dir = _samhq2_config_dir()
+        if cfg_dir is not None:
+            from hydra import initialize_config_dir
+            from hydra.core.global_hydra import GlobalHydra
+            GlobalHydra.instance().clear()                        # sam2/__init__ registered the (config-less) module
+            initialize_config_dir(config_dir=cfg_dir, version_base="1.2")
         ckpt = hf_hub_download("lkeab/hq-sam", "sam2.1_hq_hiera_large.pt")
-        _cache["samhq2"] = SAM2ImagePredictor(build_sam2("configs/sam2.1/sam2.1_hq_hiera_l.yaml", ckpt, device=device()))
+        _cache["samhq2"] = SAM2ImagePredictor(build_sam2(_HQSAM2_CFG, ckpt, device=device()))
     return _cache["samhq2"]
 
 

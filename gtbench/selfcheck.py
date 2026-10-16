@@ -31,7 +31,10 @@ def main() -> int:
     try:
         from sam2.build_sam import build_sam2  # noqa: F401
         from sam2.sam2_image_predictor import SAM2ImagePredictor  # noqa: F401
-        print("HQ-SAM 2 (sam2 package from SysCV/sam-hq) import OK")
+        import sam2, os
+        cfg = os.path.join(os.path.dirname(sam2.__file__), "configs", "sam2.1", "sam2.1_hq_hiera_l.yaml")
+        print(f"HQ-SAM 2 (sam2 package from SysCV/sam-hq) import OK; yaml config in package: {os.path.exists(cfg)}"
+              + ("" if os.path.exists(cfg) else "  (will be downloaded into <weights>/hqsam2 at first use)"))
     except Exception as e:  # noqa: BLE001
         print(f"HQ-SAM 2 import FAILED: {type(e).__name__}: {e}")
         ok = False

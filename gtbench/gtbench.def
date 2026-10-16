@@ -82,6 +82,11 @@ From: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
     # ---- HQ-SAM 2 (SysCV fork of SAM 2.1; the `sam2` package name is free because SAM 2.1 itself is used via transformers) ----
     export SAM2_BUILD_ALLOW_ERRORS=1
     $PIP install --no-cache-dir "git+https://github.com/SysCV/sam-hq.git#subdirectory=sam-hq2"
+    # the package has no MANIFEST.in, so its yaml configs are not installed -> copy them in from the repo
+    git clone --depth 1 https://github.com/SysCV/sam-hq.git /tmp/sam-hq
+    SAM2DIR=$(/opt/conda/envs/gtbench/bin/python -c "import sam2, os; print(os.path.dirname(sam2.__file__))")
+    cp -r /tmp/sam-hq/sam-hq2/sam2/configs "$SAM2DIR"/ && rm -rf /tmp/sam-hq
+    ls "$SAM2DIR"/configs/sam2.1/
 
     # ---- sanity check at build time (NO GPU here) ----
     # transformers 5 model modules call torch.accelerator.current_accelerator() at import time; with
