@@ -271,6 +271,9 @@ METHODS = {
     "grabcut": grabcut,
 }
 GROUPS = {
+    # the short list agreed 2026-10-16 (the default in run.py): one box-prompted model per SAM generation
+    # plus the two DIS5K-trained salient models (BiRefNet 2024, IS-Net 2022)
+    "short": ["sam2_box", "sam3_box", "samhq_box", "samhq2_box", "birefnet_crop", "rembg_isnet"],
     "sam": ["sam_box", "sam_points", "sam2_box", "sam2_points", "samhq_box", "samhq2_box"],
     "sam3": ["sam3_box", "sam3_text"],
     "salient": ["birefnet_crop", "birefnet_hr", "rembg_birefnet", "rembg_isnet", "rembg_u2net"],

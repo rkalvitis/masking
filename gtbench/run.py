@@ -1,7 +1,7 @@
 """Run every benchmark method on the DIS5K Insect set (or any images+masks folder).
 
     python -m gtbench.run --data DIS5K_insect --out out/gtbench --weights /path/for/weights \
-        [--methods all|sam,sam3,salient,classical|name,name] [--device cuda] [--limit N] [--only stem,stem] [--overwrite]
+        [--methods short|all|sam,sam3,salient,classical|name,name] [--device cuda] [--limit N] [--only stem,stem] [--overwrite]
 
 Per image: square crop around the ground-truth box (pad 60 % of the box, min 96 px, same rule as
 the Popillia pipeline: the object fills the model input), every method on that crop with the box
@@ -16,7 +16,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--data", default="DIS5K_insect", help="folder with images/, masks/ (same stems) and optional index.csv; on the server: <mask_bench>/gt")
 ap.add_argument("--out", default="out/gtbench", help="results root, one subfolder per method; on the server: <mask_bench>/results")
 ap.add_argument("--weights", default=None, help="where model weights/caches are stored (HF_HOME, U2NET_HOME, TORCH_HOME set from this)")
-ap.add_argument("--methods", default="all")
+ap.add_argument("--methods", default="short", help="short (default: sam2_box, sam3_box, samhq_box, samhq2_box, birefnet_crop, rembg_isnet), all, a group, or names")
 ap.add_argument("--device", default=None, help="cuda / mps / cpu (default: auto)")
 ap.add_argument("--limit", type=int, default=0)
 ap.add_argument("--only", default=None, help="comma list of stems")

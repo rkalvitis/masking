@@ -78,6 +78,8 @@ post-process are NOT part of this benchmark.
   `lkeab/hq-sam`), HQ-SAM 2 hiera-large (SysCV `sam-hq2` package, `sam2.1_hq_hiera_large.pt`, 2024-11 beta),
   SAM 3 (box; text "insect"; gated weights -> `hf auth login`), BiRefNet (1024) and
   BiRefNet_HR (2048), rembg BiRefNet / IS-Net / U2-Net, GrabCut as the classical floor.
+  The default run is the short list chosen 2026-10-16 (`--methods short`): SAM 2.1 box, SAM 3 box,
+  HQ-SAM box, HQ-SAM 2 box, BiRefNet 1024, IS-Net. `--methods all` runs all 14.
   Note IS-Net was trained on DIS5K, so its score is optimistic.
 - `gtbench/run.py`: crops a square around the padded GT box (the Popillia crop rule, 60 % padding,
   min 96 px) and runs every method on that crop with the GT box as the prompt; GT is used for nothing
@@ -101,6 +103,6 @@ post-process are NOT part of this benchmark.
 
 ```bash
 # on the server, inside the container (/workspace = code, /bench = mask_bench):
-python -m gtbench.run --data /bench/gt --out /bench/results --weights /bench/weights --device cuda
+python -m gtbench.run --data /bench/gt --out /bench/results --weights /bench/weights --device cuda   # --methods short (default) | all | names
 python -m gtbench.score --data /bench/gt --out /bench/results      # -> /bench/results/_report/REPORT.md
 ```
