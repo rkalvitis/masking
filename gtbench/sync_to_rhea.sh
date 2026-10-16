@@ -3,6 +3,8 @@
 #   bash gtbench/sync_to_rhea.sh data      # DIS5K_insect/{images,masks,index.csv} -> $BENCH/gt/
 #   bash gtbench/sync_to_rhea.sh code      # gtbench/ + README -> $SRV/   (or just git push + git pull)
 #   bash gtbench/sync_to_rhea.sh results   # $BENCH/results/ -> out/gtbench_rhea/
+#   bash gtbench/sync_to_rhea.sh popillia  # popillia_gt/ (20 labelled Popillia views) -> $BENCH/gt_popillia/
+#   bash gtbench/sync_to_rhea.sh popillia-results   # $BENCH/results_popillia/ -> out/gtbench_popillia/
 #   bash gtbench/sync_to_rhea.sh cmd       # print the build + run commands for the server
 # Server layout (2026-10-15):
 #   $BENCH = /media/white/nanodrones/roberts.kalvitis/mask_bench
@@ -14,6 +16,7 @@ SRV=${SRV:-/home/robertsk/masking}
 BENCH=${BENCH:-/media/white/nanodrones/roberts.kalvitis/mask_bench}
 CONT=${CONT:-/home/robertsk/containers/gtbench.sif}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
+RUNP="singularity exec --nv --cleanenv --contain --bind $SRV:/workspace --bind $BENCH:/bench $CONT bash -c 'cd /workspace && python -m gtbench.run --data /bench/gt_popillia --out /bench/results_popillia --weights /bench/weights --device cuda && python -m gtbench.score --data /bench/gt_popillia --out /bench/results_popillia'"
 RUN="singularity exec --nv --cleanenv --contain --bind $SRV:/workspace --bind $BENCH:/bench $CONT bash -c 'cd /workspace && python -m gtbench.run --data /bench/gt --out /bench/results --weights /bench/weights --device cuda && python -m gtbench.score --data /bench/gt --out /bench/results'"
 case "${1:-}" in
   data)
@@ -26,6 +29,12 @@ case "${1:-}" in
     mkdir -p "$HERE/out/gtbench_rhea"
     rsync -av "$HOST:$BENCH/results/" "$HERE/out/gtbench_rhea/"
     echo "== results in out/gtbench_rhea/ (_report/REPORT.md, <method>/score.csv)";;
+  popillia)
+    rsync -av --progress "$HERE/popillia_gt/" "$HOST:$BENCH/gt_popillia/";;
+  popillia-results)
+    mkdir -p "$HERE/out/gtbench_popillia"
+    rsync -av "$HOST:$BENCH/results_popillia/" "$HERE/out/gtbench_popillia/"
+    echo "== results in out/gtbench_popillia/ (_report/REPORT.md)";;
   cmd)
     echo "# build once:"; echo "singularity build --fakeroot $CONT $SRV/gtbench/gtbench.def"
     echo "# first-run check with the GPU (model imports cannot be tested inside 'singularity build'):"
@@ -33,6 +42,8 @@ case "${1:-}" in
     echo "# SAM 3 (gated): accept the licence on huggingface.co/facebook/sam3, then once:"
     echo "singularity exec --bind $BENCH:/bench $CONT bash -c 'HF_HOME=/bench/weights/hf hf auth login'"
     echo "# run everything (inside screen):"; echo "export SINGULARITYENV_CUDA_VISIBLE_DEVICES=0"
-    echo "$RUN 2>&1 | tee $BENCH/results/run_\$(date +%m%d_%H%M).log";;
-  *) echo "usage: $0 data|code|results|cmd"; exit 1;;
+    echo "$RUN 2>&1 | tee $BENCH/results/run_\$(date +%m%d_%H%M).log"
+    echo "# same on the 20 labelled Popillia views (after 'sync_to_rhea.sh popillia'):"
+    echo "$RUNP 2>&1 | tee $BENCH/results_popillia/run_\$(date +%m%d_%H%M).log";;
+  *) echo "usage: $0 data|code|results|popillia|popillia-results|cmd"; exit 1;;
 esac

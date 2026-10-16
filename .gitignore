@@ -3,6 +3,7 @@ DIS5K.zip
 DIS5K_full/
 # Popillia test images (.tif, 2 GB) and local mask sets
 data/
+popillia_gt/   # 225 MB, 20 labelled views as PNG; rsync with sync_to_rhea.sh popillia
 # run outputs, masks, sheets, reports (rsync results back instead)
 out/
 # model caches if --weights points inside the repo
